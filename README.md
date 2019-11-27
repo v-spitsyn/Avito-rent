@@ -6,7 +6,7 @@ The project presents modelling rent prices of 1 bedroom flats in Moscow. The dat
 
 scraping.py - crawling web-pages of flats and parsing information about them
 
-stations.py - parsing and saving coordinates of underground stations
+stations.py - parsing coordinates of underground stations and computing their distances to the city center
 
 cleaning.py - constructing a dataframe from parsed data
 
