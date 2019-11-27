@@ -5,6 +5,7 @@ import time
 import math
 from scipy.stats import expon
 import pickle
+import datetime
 
 
 
@@ -14,7 +15,7 @@ first_response = requests.get(first_page,
                               headers={'User-Agent': UserAgent().chrome})
 first_source = first_response.content
 first_soup = BeautifulSoup(first_source)
-num_offers_text = first_soup.find('span', {'class': "page-title-count"}).text
+num_offers_text = first_soup.find('span', {'class': "page-title-count-2MiSQ"}).text
 num_offers = int(num_offers_text.replace(' ', ''))
 OFFERS_PER_PAGE = 50
 num_pages = math.ceil(num_offers/OFFERS_PER_PAGE)
@@ -33,16 +34,17 @@ for page_iter in range(1, num_pages+1):
     print(len(page_links))
     flat_links.extend(page_links)
     print(len(flat_links), len(set(flat_links)))
+flat_links = list(set(flat_links))
 
-price_tags = {'price': ('span',
+price_tags = {'rent': ('span',
                         {'class': "js-item-price"}),
               'currency': ('span',
                            {'itemprop': "priceCurrency"}),
 }
-seller_tags = {'seller': ('div',
-                          {'class': 'seller-info-name js-seller-info-name'}),
-               'seller_type': ('div',
-                               {'class': None})
+seller_tags = {'landlord': ('div',
+                            {'class': 'seller-info-name js-seller-info-name'}),
+               'landlord_type': ('div',
+                                 {'class': None})
 }
 place_tags = {'stations': ('span',
                             {'class': 'item-address-georeferences-item__content'}),
@@ -63,7 +65,7 @@ rest_tags = {'date': ('div',
 
 flats = {}
 count = 0
-for link in flat_links:
+for link in flat_links[:100]:
     flat_id = link
     flat_response = requests.get('http://avito.ru'+link, 
                                  headers={'User-Agent': UserAgent().chrome})
@@ -115,5 +117,6 @@ for link in flat_links:
     count = count + 1 
     time.sleep(expon.rvs(30, 10))
     
-with open('1room_flats_02.11.19', 'wb') as f:
+date = datetime.date.today()
+with open('1room_flats_{}.pickle'.format(date.strftime('%d-%m-%y')), 'wb') as f:
     pickle.dump(flats, f)

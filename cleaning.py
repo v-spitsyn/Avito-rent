@@ -7,10 +7,11 @@ Created on Wed Oct 16 21:14:09 2019
 import pickle
 import pandas as pd
 import numpy as np
-from geopy.distance import distance as coord_distance
 
 
-with open('1room_flats_02.11.19', 'rb') as f:
+
+scrap_date = '26-11-19'
+with open('1room_flats_{}.pickle'.format(scrap_date), 'rb') as f:
     flats = pickle.load(f)   
 flats_dict = {}
 for inner_key in flats[list(flats.keys())[0]].keys():
@@ -18,13 +19,20 @@ for inner_key in flats[list(flats.keys())[0]].keys():
  
 df = pd.DataFrame(data=flats_dict, index=flats.keys())
 df.index = 'avito.ru' + df.index
-df.dropna(subset=['header'], inplace=True)
-df[df['landlord'].isna()]
-df.loc[df['landlord'].isna(), ['landlord', 'landlord_type']] = ('ПИК-Аренда', 'Застройщик')
-df.drop(df[df.index.str.contains('zelenograd')].index, inplace=True)
-df.drop(df[df['address'].str.contains('Зеленоград').fillna(False)].index, inplace=True)
-df.drop(df[df['distances'].apply(lambda l: len(l) == 0)].index, inplace=True)
-df.drop(df[df['stations'].apply(lambda l: len(l) == 0)].index, inplace=True)
+
+df.dropna(inplace=True)
+df.drop(df[df['currency'] != 'RUB'].index, axis=1, inplace=True)
+df.drop(df[df.index.str.contains('zelenograd')].index, 
+        inplace=True)
+df.drop(df[df['address'].str.contains('Зеленоград').fillna(False)].index, 
+        inplace=True)
+df.drop(df[df['distances'].apply(lambda l: len(l) == 0)].index, 
+        inplace=True)
+df.drop(df[df['stations'].apply(lambda l: len(l) == 0)].index, 
+        inplace=True)
+df.drop(columns=['currency', 'address'], inplace=True)
+
+
 
 def to_kilometers(l):
     dist_split = [it.split() for it in l]
@@ -35,17 +43,15 @@ def to_kilometers(l):
 df['distances_km'] = df['distances'].apply(to_kilometers)
 df['station'] = df.apply(lambda x: x['stations'][np.argmin(x['distances_km'])], 
                          axis=1)
-df['dist'] = df['distances_km'].apply(lambda l: min(l))
-df['station_dist'] = df['dist']*10
+df['station_dist'] = 10 * df['distances_km'].apply(lambda l: min(l))
+
 
 main_params_map = {                            
-                    'floor': 'Этаж',
-                    'n_floors': 'Этажей в доме',
-                    'house': 'Тип дома',
-                    'n_rooms': 'Количество комнат',
-                    'area': 'Общая площадь',
-                    'liv_area': 'Жилая площадь',
-                    'kitchen_area': 'Площадь кухни'
+                    'Этаж': 'floor',
+                    'Этажей в доме': 'n_floors',
+                    'Тип дома': 'house_type',
+                    'Количество комнат': 'n_rooms',
+                    'Общая площадь': 'area'
 }
 extra_params_map = {      
                     'wifi': 'Wi-Fi',
@@ -58,68 +64,80 @@ extra_params_map = {
                     'balcony': 'Балкон / лоджия',
                     'parking': 'Парковочное место',
 }
-df['main_params_dict'] = df['main_params'].apply(lambda l: dict(zip([q[0].strip() for q in [it.split(':') for it in l]], 
-                                                                    [q[1].strip() for q in [it.split(':') for it in l]])
-                                                                )
-                                                )
-def complete_params(d):
-    for param in main_params_map.values():
-        if param not in d.keys():
-            d[param] = None
 
-df['main_params_dict'].apply(complete_params)
-for param in main_params_map.keys():
-    df[param] = df['main_params_dict'].apply(lambda d: d[main_params_map[param]])
+def to_dict(params_list):
+    ru_keys = [key[0].strip() for key in [it.split(':') for it in params_list]]
+#    en_keys = [main_params_map[key] for key in ru_keys]
+    vals = [val[1].strip() for val in [it.split(':') for it in params_list]]
+    params_dict = {}
+    for key in main_params_map:
+        if key in ru_keys:
+            params_dict[main_params_map[key]] = vals[ru_keys.index(key)]
+        else:
+            params_dict[main_params_map[key]] = None
+    return params_dict
+            
+
+df['main_params_dict'] = df['main_params'].apply(to_dict)
+
+for param in main_params_map.values():
+    df[param] = df['main_params_dict'].apply(lambda d: d[param])
+df.dropna(inplace=True)    
+    
 for param in extra_params_map:
     df[param] = df['extra_params'].apply(lambda l: int(extra_params_map[param] in l))
+
+
 df['studio'] = (df['n_rooms'] == 'студии').astype(int)
 df.drop('n_rooms', axis=1, inplace=True)
 df['landlord'] = df['landlord'].str.replace('\n|<<|>>|"', '').apply(lambda s: s.strip())
-df['deposit'] = df['deal'].apply(lambda s: 
-                                        s.split(',')[0].split()[1]+s.split(',')[0].split()[2] 
-                                        if 'без залога' not in s else 0) 
-df['comission'] = df['deal'].apply(lambda s: 
-                                          s.split(',')[1].split()[1]+s.split(',')[1].split()[2] 
-                                          if (('без комиссии' not in s) and (len(s.split(',')) > 1)) 
-                                          else 0)
-df['price'] = df['price'].astype(float)
-df['deposit'] = (df['deposit'].astype(float)/df['price']) * 100
-df['comission'] = (df['comission'].astype(float)/df['price']) * 100
 
-df['house_type'] = df['house'].map({'кирпичный': 'brick', 'монолитный': 'monolithic', 
-                                    'панельный': 'panel', 'блочный': 'block', 
-                                    'деревянный': 'wood'})
+df['area'] = df['area'].apply(lambda s: s.split()[0])
+
+for col in ('floor', 'n_floors', 'area'):
+    df[col] = df[col].astype(float)
+df['1st_floor'] = (df['floor'] == 1).astype(int)
+df['last_floor'] = (df['floor'] == df['n_floors']).astype(int)
+
+
+df['rent'] = df['rent'].astype(float)
+
+def to_percent(row):
+    deal = row['deal']
+    if 'без залога' in deal:
+        deposit = 0
+    else:
+        deposit_str = deal.split(',')[0]
+        deposit = int(deposit_str.split()[1] + deposit_str.split()[2])
+    deposit_percent = 100 * deposit/row['rent']
+    if ('без комиссии' in deal) or (len(deal.split(',')) < 2):
+        commission = 0
+    else:
+        commission_str = deal.split(',')[1]
+        commission = int(commission_str.split()[1] + commission_str.split()[2])
+    commission_percent = 100 * commission/row['rent']
+    return (deposit_percent, commission_percent)
+        
+df[['deposit', 'commission']] = df.apply(to_percent, axis=1, result_type='expand')
+
+df['rent'] = df['rent']/1000
+
+df['house_type'] = df['house_type'].map({'кирпичный': 'brick', 'монолитный': 'monolithic', 
+                                         'панельный': 'panel', 'блочный': 'block', 
+                                         'деревянный': 'wood'})
 df.drop(df[df['house_type'] == 'wood'].index, inplace=True)
 
-df['landlord_type'] = df['landlord_type'].map({'Арендодатель': 'landrord', 
+df['landlord_type'] = df['landlord_type'].map({'Арендодатель': 'owner', 
                                                'Агентство': 'agency', 
                                                'Застройщик': 'developer'})
 
-for col in ('floor', 'n_floors'):
-    df[col] = df[col].astype(int)
-for col in ('area', 'liv_area', 'kitchen_area'):
-    df[col] = df[col].apply(lambda s: float(s.split()[0]) if s is not None else None)
 
-df.drop(['header', 'currency', 'stations', 'distances', 'main_params', 'address', 
-         'deal', 'deal', 'dist', 'distances_km', 'main_params_dict', 'house'], 
-        axis=1, inplace=True)
-df['price'] = df['price']/1000
-
-with open('/content/gdrive/My Drive/stations', 'rb') as f:
-    stations_coord = pickle.load(f)   
-km_zero = {'lat': 55.755919, 'lng': 37.617589}
-distances_to_zero_km = [coord_distance((stations_coord[key]['lat'], stations_coord[key]['lng']),
-                                        (km_zero['lat'], km_zero['lng'])
-                                        ).km 
-                        for key in stations_coord.keys()
-                        ]
-distances_to_zero_km_dict = dict(zip(stations_coord.keys(), distances_to_zero_km))
-is_circle = dict(zip(stations_coord,
-                     [stations_coord[key]['line'] == 'Кольцевая' for key in stations_coord]
-                    )
-                )
-df['center_dist'] = df['station'].map(distances_to_zero_km_dict).round(3)
-df['circle'] = df['station'].map(is_circle).astype(int)
-df.drop(['liv_area', 'kitchen_area', 'floor', 'n_floors'], axis=1, inplace=True)
-with open('clean_df', 'wb') as f:
-    pickle.dump(df, f)
+stations_df = pd.read_csv('stations.csv', index_col=0)
+df['station'] = df['station'].apply(lambda s: s.lower())
+df = df.join(stations_df, on='station', how='left')
+clean_df = df[['area', '1st_floor', 'last_floor', 'studio', 'station_dist',
+               'center_dist', 'circle', 'house_type', 'landlord_type', 'landlord',
+               'commission', 'deposit', 'fridge', 'ac', 'balcony', 'microwave',
+               'parking', 'stove', 'tv', 'wash_machine', 'wifi', 'rent']
+             ]
+clean_df.to_csv('clean_df.csv')
