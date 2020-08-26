@@ -3,7 +3,8 @@ The project presents modelling rent prices of 1 bedroom flats in Moscow using da
 
 *Only modelling.ipynb contains comments.  
 
-\
+
+
 
 scraping.py - crawling web-pages of flats and parsing their descriptions
 
